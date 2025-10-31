@@ -1,6 +1,7 @@
 library(tidyverse)
 library(glue)
 library(fs)
+library(progress)
 library(furrr)
 library(progressr)
 
@@ -23,6 +24,31 @@ dados_cronologicos <- tidyr::expand_grid(
     destfile = glue::glue("dados/zip/{arquivos_base}.zip")
   )
 
+# Initialize progress bar
+pb <- progress_bar$new(
+  format = "  downloading [:bar] :percent in :elapsed",
+  total = nrow(dados_cronologicos), clear = FALSE, width = 60)
+
+# Download function that updates the progress bar
+download_servidores <- function(url, dest) {
+  # Using tryCatch to handle potential download errors (e.g., 404 Not Found)
+  tryCatch({
+    # quiet = TRUE to not interfere with the progress bar
+    curl::curl_download(url, destfile = dest, quiet = TRUE)
+  }, error = function(e) {
+    # We still want to see errors
+    message(paste("Failed to download", url, "-", e$message))
+  })
+  # Signal a progress update
+  pb$tick()
+}
+
+# Download all files sequentially
+purrr::walk2(
+  dados_cronologicos$arquivos_url,
+  dados_cronologicos$destfile,
+  download_servidores
+)
 # Set up parallel processing
 plan(multisession)
 
