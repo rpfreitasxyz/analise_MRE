@@ -49,29 +49,3 @@ purrr::walk2(
   dados_cronologicos$destfile,
   download_servidores
 )
-# Set up parallel processing
-plan(multisession)
-
-# Download function that updates the progress bar
-download_servidores <- function(url, dest, p) {
-  # Using tryCatch to handle potential download errors (e.g., 404 Not Found)
-  tryCatch({
-    curl::curl_download(url, destfile = dest)
-  }, error = function(e) {
-    message(paste("Failed to download", url, "-", e$message))
-  })
-  # Signal a progress update
-  p()
-}
-
-# Download all files in parallel with a progress bar
-with_progress({
-  p <- progressor(steps = nrow(dados_cronologicos))
-  future_walk2(
-    dados_cronologicos$arquivos_url,
-    dados_cronologicos$destfile,
-    ~ download_servidores(.x, .y, p)
-  )
-})
-
-print("All downloads attempted.")
