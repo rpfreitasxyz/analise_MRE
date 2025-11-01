@@ -1,4 +1,7 @@
-library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(purrr)
 library(glue)
 library(fs)
 library(progress)
@@ -10,11 +13,18 @@ dir_create("dados/zip")
 
 base_uri <- "https://portaldatransparencia.gov.br/download-de-dados/servidores"
 
+# Get current year and month
+current_date <- Sys.Date()
+current_year <- as.integer(format(current_date, "%Y"))
+current_month <- as.integer(format(current_date, "%m"))
+
 # Generate all combinations of year and month
 dados_cronologicos <- tidyr::expand_grid(
-  ano = 2022:2025,
+  ano = 2013:current_year,
   mes = 1:12
 ) |>
+  # Filter out future dates
+  dplyr::filter(!(ano == current_year & mes > current_month)) |>
   dplyr::mutate(
     mes_formatado = stringr::str_pad(mes, width = 2, side = "left", pad = "0")
   ) |>
@@ -24,10 +34,22 @@ dados_cronologicos <- tidyr::expand_grid(
     destfile = glue::glue("dados/zip/{arquivos_base}.zip")
   )
 
+# Get list of already downloaded files
+downloaded_files <- fs::dir_ls("dados/zip", glob = "*.zip") |>
+  fs::path_file() |>
+  fs::path_ext_remove()
+
+# Find the most recent downloaded file to re-download it
+most_recent_file <- max(downloaded_files)
+
+# Filter out already downloaded files, but keep the most recent one for re-download
+dados_cronologicos_filtrados <- dados_cronologicos |>
+  dplyr::filter(!arquivos_base %in% downloaded_files | arquivos_base == most_recent_file)
+
 # Initialize progress bar
 pb <- progress_bar$new(
   format = "  downloading [:bar] :percent in :elapsed",
-  total = nrow(dados_cronologicos), clear = FALSE, width = 60)
+  total = nrow(dados_cronologicos_filtrados), clear = FALSE, width = 60)
 
 # Download function that updates the progress bar
 download_servidores <- function(url, dest) {
@@ -45,7 +67,30 @@ download_servidores <- function(url, dest) {
 
 # Download all files sequentially
 purrr::walk2(
-  dados_cronologicos$arquivos_url,
-  dados_cronologicos$destfile,
+  dados_cronologicos_filtrados$arquivos_url,
+  dados_cronologicos_filtrados$destfile,
   download_servidores
 )
+
+# --- Unzip files ---
+
+# Create destination directory if it doesn't exist
+dir_create("dados/csv")
+
+# Get list of all downloaded zip files
+zip_files <- fs::dir_ls("dados/zip", glob = "*.zip")
+
+# Function to unzip a single file
+unzip_file <- function(file) {
+  # Define the destination directory for the unzipped files
+  dest_dir <- fs::path("dados", "csv", fs::path_ext_remove(fs::path_file(file)))
+
+  # Create the directory
+  fs::dir_create(dest_dir)
+
+  # Unzip the file
+  utils::unzip(file, exdir = dest_dir)
+}
+
+# Unzip all files
+purrr::walk(zip_files, unzip_file)
