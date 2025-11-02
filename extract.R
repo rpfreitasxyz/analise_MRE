@@ -5,9 +5,10 @@ library(purrr)
 library(glue)
 library(fs)
 library(progress)
-library(furrr)
 library(progressr)
+library(tidyverse)
 
+#### EXTRACAO WEB ####
 # Create destination directory if it doesn't exist
 dir_create("dados/zip")
 
@@ -94,3 +95,41 @@ unzip_file <- function(file) {
 
 # Unzip all files
 purrr::walk(zip_files, unzip_file)
+
+rm(list = ls())
+gc()
+
+#### EXTRACAO BASAL ####
+path_dados_bruto_max <- list.files("dados/csv") %>%
+  enframe(name = NULL) %>%
+  mutate(periodo_extraido = str_extract(value, "\\d{6}")) %>%
+  { . ->> path_dados_bruto } %>%
+  filter(max(value) == value)
+
+dados_cadastro_bruto <- data.table::fread(paste0("D:/R/projects/analise_MRE/dados/csv/", 
+                                         path_dados_bruto_max$value, "/", 
+                                         path_dados_bruto_max$periodo_extraido, "_Cadastro.csv"), encoding = "Latin-1")
+
+dados_cadastro_tratado <- dados_cadastro_bruto %>%
+  filter(ORG_LOTACAO == "Ministério das Relações Exteriores",
+         DESCRICAO_CARGO %in% c("MINISTRO DE PRIMEIRA CLASSE",
+                                "MINISTRO DE SEGUNDA CLASSE",
+                                "CONSELHEIRO",
+                                "PRIMEIRO SECRETARIO",
+                                "SEGUNDO SECRETARIO",
+                                "TERCEIRO SECRETARIO"))
+
+dados_remuneracao_bruto <- path_dados_bruto %>%
+  mutate(full_path = paste0("D:/R/projects/analise_MRE/dados/csv/", 
+                            value, "/", 
+                            periodo_extraido, "_Remuneracao.csv")) %>%
+  mutate(dados = map(.x = full_path,
+                     .f = data.table::fread,
+                     quote = "",
+                     colClasses = c("character"),
+                     encoding = "Latin-1"))
+
+dados_remuneracao_tratado <- dados_remuneracao_bruto %>%
+  slice(1) %>%
+  unnest(cols = dados)
+
