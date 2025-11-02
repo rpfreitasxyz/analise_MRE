@@ -127,9 +127,40 @@ dados_remuneracao_bruto <- path_dados_bruto %>%
                      .f = data.table::fread,
                      quote = "",
                      colClasses = c("character"),
-                     encoding = "Latin-1"))
+                     encoding = "Latin-1")) %>%
+  select(-c(1, 3)) %>%
+  unnest(cols = dados) %>%
+  rename(Id_SERVIDOR = 4,
+         nome_servidor = 6) %>%
+  mutate(Id_SERVIDOR = str_remove_all(Id_SERVIDOR, "\""),
+         nome_servidor = str_remove_all(nome_servidor, "\"")) %>%
+  filter(Id_SERVIDOR %in% dados_cadastro_tratado$Id_SERVIDOR_PORTAL) %>%
+  pivot_longer(cols = -c(periodo_extraido, Id_SERVIDOR, nome_servidor), names_to = "nome_cols", values_to = "valor_cols") %>%
+  mutate_all(~str_remove_all(.x, "\"")) %>%
+  filter(!nome_cols %in% c("ANO", "MES", "CPF")) %>%
+  mutate(valor_cols = str_replace_all(valor_cols, ",", ".") %>% as.numeric(),
+         periodo_extraido = lubridate::ym(periodo_extraido) + months(1) - days(1))
+
+cambio_historico <- rbcb::get_currency("USD", 
+                                     start_date = min(dados_remuneracao_bruto$periodo_extraido), 
+                                     end_date = max(dados_remuneracao_bruto$periodo_extraido)) %>%
+  mutate(periodo_extraido = str_extract(date, "\\d{4}-\\d{2}") %>% lubridate::ym() + months(1) - days(1)) %>%
+  group_by(periodo_extraido) %>%
+  filter(date == last(date)) %>%
+  ungroup() %>%
+  select(periodo_extraido, ask)
 
 dados_remuneracao_tratado <- dados_remuneracao_bruto %>%
-  slice(1) %>%
-  unnest(cols = dados)
+  # Adiciona dolar para calculo de remuneracao total em reais
+  inner_join(cambio_historico) %>%
+  dtplyr::lazy_dt() %>%
+  mutate(eh_dolar = str_detect(nome_cols, "U\\$")) %>%
+  mutate(remuneracao_BRL = if_else(eh_dolar,
+                                   valor_cols * ask,
+                                   valor_cols)) %>%
+  mutate(nome_cols = str_remove_all(nome_cols, "\\(.*?\\)") %>% str_trim("both")) %>%
+  group_by(periodo_extraido, Id_SERVIDOR, nome_servidor, nome_cols) %>%
+  # Poe na mesma base: BRL
+  summarise(valor_cols = sum(remuneracao_BRL)) %>%
+  collect()
 
