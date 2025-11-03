@@ -167,3 +167,5 @@ dados_remuneracao_tratado <- dados_remuneracao_bruto %>%
   summarise(valor_cols = sum(remuneracao_BRL)) %>%
   collect()
 
+fst::write_fst(dados_remuneracao_tratado, "dados/base_dados_tratados.fst")
+
