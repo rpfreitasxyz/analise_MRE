@@ -153,13 +153,16 @@ cambio_historico <- rbcb::get_currency("USD",
 dados_remuneracao_tratado <- dados_remuneracao_bruto %>%
   # Adiciona dolar para calculo de remuneracao total em reais
   inner_join(cambio_historico) %>%
+  inner_join(dados_cadastro_tratado %>%
+               mutate(Id_SERVIDOR_PORTAL = as.character(Id_SERVIDOR_PORTAL)) %>%
+               select(Id_SERVIDOR_PORTAL, DESCRICAO_CARGO, UORG_LOTACAO), c("Id_SERVIDOR" = "Id_SERVIDOR_PORTAL")) %>%
   dtplyr::lazy_dt() %>%
   mutate(eh_dolar = str_detect(nome_cols, "U\\$")) %>%
   mutate(remuneracao_BRL = if_else(eh_dolar,
                                    valor_cols * ask,
                                    valor_cols)) %>%
   mutate(nome_cols = str_remove_all(nome_cols, "\\(.*?\\)") %>% str_trim("both")) %>%
-  group_by(periodo_extraido, Id_SERVIDOR, nome_servidor, nome_cols) %>%
+  group_by(periodo_extraido, Id_SERVIDOR, nome_servidor, nome_cols, DESCRICAO_CARGO, UORG_LOTACAO) %>%
   # Poe na mesma base: BRL
   summarise(valor_cols = sum(remuneracao_BRL)) %>%
   collect()
